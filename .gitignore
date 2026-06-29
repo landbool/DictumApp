@@ -1,0 +1,16 @@
+bridge_tg.py
+dictum_bot_users.json
+dictum_verified_users.json
+dictum_server_user_macros.json
+.env
+# Системный мусор Python
+__pycache__/
+*.pyc
+
+# Логи ошибок и краш-репорты
+*.log
+dictum_crash_report.txt
+
+# Виртуальное окружение (если используешь venv)
+venv/
+.venv/
