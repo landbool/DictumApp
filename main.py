@@ -27,8 +27,10 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
+# 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
+YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
 
 # Динамически загружаем топик пользователя, если он сохранён в настройках
 if os.path.exists(MQTT_FILE):
@@ -549,16 +551,14 @@ class DictumBridge(ctk.CTk):
         progress_win.configure(fg_color=D_SIDE)
         progress_win.attributes("-topmost", True)
         
-        # Центрируем окошко относительно главного окна
         progress_win.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() // 2) - 170
         y = self.winfo_y() + (self.winfo_height() // 2) - 70
         progress_win.geometry(f"+{x}+{y}")
         
-        lbl_status = ctk.CTkLabel(progress_win, text="Скачивание пакета обновлений...", font=("Segoe UI Semibold", 12), text_color="#FFFFFF")
+        lbl_status = ctk.CTkLabel(progress_win, text="Подключение к серверу обновлений...", font=("Segoe UI Semibold", 12), text_color="#FFFFFF")
         lbl_status.pack(pady=(20, 5))
         
-        # Наш ползунок прогресса в стиле твоего дизайна
         p_bar = ctk.CTkProgressBar(progress_win, width=280, fg_color="#1F2438", progress_color=ACCENT)
         p_bar.pack(pady=5)
         p_bar.set(0.0)
@@ -567,44 +567,95 @@ class DictumBridge(ctk.CTk):
         lbl_percent.pack(pady=(0, 10))
 
         def download_worker():
+            temp_dir = os.getenv("TEMP")
+            setup_path = os.path.join(temp_dir, "Dictum_Setup.exe")
+            
+            # Маскируемся под Chrome, чтобы провайдеры и сервера нам доверяли
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            
+            success = False
+
+            # --- ПОПЫТКА 1: СКАЧИВАНИЕ С GITHUB (С ТАЙМАУТОМ 3 СЕКУНДЫ) ---
             try:
-                # Качаем в официальную временную папку Windows (Temp)
-                temp_dir = os.getenv("TEMP")
-                setup_path = os.path.join(temp_dir, "Dictum_Setup.exe")
+                self.after(0, lambda: lbl_status.configure(text="Скачивание с GitHub..."))
                 
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }
-                response = requests.get(url, stream=True, headers=headers, timeout=20)
+                # КРИТИЧЕСКИ ВАЖНО: timeout=3 заставит вылететь ошибку, если ответа нет в течение 3 секунд
+                response = requests.get(url, stream=True, headers=headers, timeout=3)
                 total_length = response.headers.get('content-length')
                 
-                if total_length is None:
-                    # Если GitHub не отдал размер файла, качаем в один присест
-                    with open(setup_path, 'wb') as f:
-                        f.write(response.content)
-                else:
+                if response.status_code == 200:
                     dl = 0
-                    total_length = int(total_length)
+                    total_length = int(total_length) if total_length else None
                     with open(setup_path, 'wb') as f:
                         for chunk in response.iter_content(chunk_size=8192):
                             if chunk:
                                 dl += len(chunk)
                                 f.write(chunk)
-                                # Вычисляем процент и двигаем ползунок в главном потоке
-                                percent = int((dl / total_length) * 100)
-                                self.after(0, lambda p=percent, d=dl, t=total_length: [
-                                    p_bar.set(d / t),
-                                    lbl_percent.configure(text=f"{p}%")
-                                ])
-                
-                # Скачивание завершено успешно! Запускаем фазу установки
-                self.after(0, lambda: self.run_installer_and_exit(setup_path, progress_win))
-                
-            except Exception as err:
-                self.after(0, lambda: messagebox.showerror("Ошибка загрузки", f"Не удалось загрузить файлы: {err}"))
-                self.after(0, progress_win.destroy)
+                                if total_length:
+                                    percent = int((dl / total_length) * 100)
+                                    self.after(0, lambda p=percent, d=dl, t=total_length: [
+                                        p_bar.set(d / t),
+                                        lbl_percent.configure(text=f"{p}%"),
+                                        lbl_status.configure(text="Скачивание пакета (GitHub)...")
+                                    ])
+                    success = True
+            except Exception as github_err:
+                # Если GitHub выдал 10054, таймаут или любую сетевую ошибку — уходим на Яндекс
+                print(f"[Updater] GitHub недоступен или сбросил связь: {github_err}")
+                success = False
 
-        # Запускаем скачивание в фоне, чтобы интерфейс Dictum не завис
+            # --- ПОПЫТКА 2: АВТОМАТИЧЕСКИЙ ПЕРЕХОД НА ЯНДЕКС ДИСК ---
+            if not success:
+                try:
+                    self.after(0, lambda: [
+                        lbl_status.configure(text="Смена сервера. Скачивание с Яндекс Диска..."),
+                        p_bar.set(0.0),
+                        lbl_percent.configure(text="0%")
+                    ])
+                    time.sleep(0.5) # Небольшая пауза для стабилизации интерфейса
+                    
+                    # Стучимся к открытому API Яндекса для получения прямой ссылки на скачивание
+                    api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
+                    api_response = requests.get(api_url, params={'public_key': YANDEX_PUBLIC_URL}, headers=headers, timeout=5)
+                    
+                    if api_response.status_code == 200:
+                        direct_url = api_response.json().get('href')
+                        
+                        # Начинаем скачивание самого файла по прямой ссылке Яндекса
+                        response = requests.get(direct_url, stream=True, headers=headers, timeout=15)
+                        total_length = response.headers.get('content-length')
+                        
+                        dl = 0
+                        total_length = int(total_length) if total_length else None
+                        with open(setup_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    dl += len(chunk)
+                                    f.write(chunk)
+                                    if total_length:
+                                        percent = int((dl / total_length) * 100)
+                                        self.after(0, lambda p=percent, d=dl, t=total_length: [
+                                            p_bar.set(d / t),
+                                            lbl_percent.configure(text=f"{p}%"),
+                                            lbl_status.configure(text="Скачивание пакета (Яндекс Диск)...")
+                                        ])
+                        success = True
+                    else:
+                        raise Exception("Яндекс API отклонил запрос")
+                        
+                except Exception as yandex_err:
+                    print(f"[Updater] Ошибка скачивания с Яндекс Диска: {yandex_err}")
+                    self.after(0, lambda: messagebox.showerror("Ошибка загрузки", "Не удалось загрузить обновление ни с одного сервера."))
+                    self.after(0, progress_win.destroy)
+                    return
+
+            # Если файл успешно скачан из любого источника — запускаем установку!
+            if success:
+                self.after(0, lambda: self.run_installer_and_exit(setup_path, progress_win))
+
+        # Запускаем фоновый поток, чтобы окно программы не зависало
         threading.Thread(target=download_worker, daemon=True).start()
 
     def run_installer_and_exit(self, setup_path, win_to_close):
