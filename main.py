@@ -6,6 +6,8 @@ import psutil
 from PIL import Image, ImageTk 
 import cv2 
 from modules.ui_launcher import UIMacroLauncher
+import pystray
+from PIL import Image
 
 # Импортируем наши UI-модули
 from modules.ui_keyboard import UIKeyboardCard
@@ -27,7 +29,7 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.4"
+CURRENT_VERSION = "1.0.5"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
 # 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
 YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
@@ -498,6 +500,7 @@ class DictumBridge(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close_request)
         
         self.setup_ui()
+        self.setup_tray() # 🔥 ДОБАВЛЕНО: Запуск иконки в системном трее при старте программы
         self.views["cmds"].pack(fill="both", expand=True)
         self.refresh_list()
         
@@ -519,6 +522,41 @@ class DictumBridge(ctk.CTk):
             # после чего окно гарантированно развернется на экране, а не уйдет в трей!
             self.after(100, self.show_main_app_smoothly)
 
+    def setup_tray(self):
+        """ Создание и запуск иконки в трее Windows """
+        # Подтягиваем файл логотипа из корня проекта
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "convertico-logo.ico")
+        try:
+            image = Image.open(icon_path)
+        except:
+            # Резервный синий квадрат, если файл иконки вдруг удалили
+            image = Image.new('RGB', (64, 64), color='#007AFF')
+
+        # Описываем контекстное меню правого клика по иконке трея
+        menu = pystray.Menu(
+            pystray.MenuItem('Развернуть пульт', self.show_from_tray, default=True),
+            pystray.MenuItem('Выход', self.exit_from_tray)
+        )
+
+        self.tray_icon = pystray.Icon("Dictum", image, "Dictum", menu)
+        
+        # ⚠️ КРИТИЧЕСКИ ВАЖНО: запускаем pystray в фоновом потоке.
+        # Иначе он заблокирует главное окно и приложение намертво зависнет!
+        threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def show_from_tray(self):
+        """ Безопасный вывод скрытого окна на экран компьютера через поток Tkinter """
+        self.after(0, self.deiconify)
+        self.after(0, self.lift)
+        self.after(0, self.focus_force)
+
+    def exit_from_tray(self):
+        """ Чистое закрытие приложения со всеми компонентами """
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            self.tray_icon.stop() # Обязательно убираем значок, чтобы он не оставался "висеть" у часов
+        self.quit()
+        sys.exit()
+    
     def show_main_app_smoothly(self):
         self.deiconify()
         self.dynamic_win_api_patch()
@@ -973,7 +1011,6 @@ class DictumBridge(ctk.CTk):
         """ Обработчик нажатия на крестик программы """
         close_behavior = "ask"
         
-        # Читаем существующий конфиг, чтобы узнать, запомнил ли пользователь выбор ранее
         if os.path.exists(MQTT_FILE):
             try:
                 with open(MQTT_FILE, "r", encoding="utf-8") as f:
@@ -982,10 +1019,10 @@ class DictumBridge(ctk.CTk):
 
         # Если выбор уже был сделан — выполняем его без лишних вопросов
         if close_behavior == "exit":
-            self.quit()
-            sys.exit()
+            self.exit_from_tray() # 🔥 ИСПРАВЛЕНО: Выходим красиво, стирая иконку
+            return
         elif close_behavior == "tray":
-            self.withdraw()  # Полностью скрывает окно с экрана и панели задач, оставляя поток MQTT живым
+            self.withdraw()  # Полностью скрывает окно, иконка в трее остается активной
             return
 
         # Если стоит режим "ask", создаем красивое стеклянное диалоговое окно
@@ -1050,8 +1087,7 @@ class DictumBridge(ctk.CTk):
             
             close_win.destroy()
             if action == "exit":
-                self.quit()
-                sys.exit()
+                self.exit_from_tray() # 🔥 ИСПРАВЛЕНО: Выходим красиво, стирая иконку
             else:
                 self.withdraw()  # Сворачиваем (скрываем интерфейс)
 
