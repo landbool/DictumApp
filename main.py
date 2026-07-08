@@ -27,7 +27,7 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "1.0.3"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
 # 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
 YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
@@ -825,8 +825,13 @@ class DictumBridge(ctk.CTk):
     def sync_commands_to_bot(self):
         """ Отправляет список фраз вызова серверному боту через MQTT """
         if self.mqtt_client and self.mqtt_client.is_connected():
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            session_file = os.path.join(current_dir, "dictum_tg_session.json")
+            # 🔥 ИСПРАВЛЕНО: Умное определение корня программы в .exe
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+            session_file = os.path.join(base_dir, "dictum_tg_session.json")
             if os.path.exists(session_file):
                 try:
                     with open(session_file, "r", encoding="utf-8") as f:
@@ -977,8 +982,11 @@ class DictumBridge(ctk.CTk):
             if getattr(self, 'current_alice_topic', None):
                 cl.subscribe(self.current_alice_topic)
             
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            session_file = os.path.join(current_dir, "dictum_tg_session.json")
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+            session_file = os.path.join(base_dir, "dictum_tg_session.json")
             if os.path.exists(session_file):
                 try:
                     with open(session_file, "r", encoding="utf-8") as f:
@@ -1023,7 +1031,13 @@ class DictumBridge(ctk.CTk):
                     cmd_raw = raw.lower().strip()
                 
                 try:
-                    session_file = os.path.join(current_dir, "dictum_tg_session.json")
+                    # 🔥 ИСПРАВЛЕНО: Роутинг в корень для проверки защищенных команд
+                    if getattr(sys, 'frozen', False):
+                        base_dir = os.path.dirname(sys.executable)
+                    else:
+                        base_dir = os.path.dirname(os.path.abspath(__file__))
+                        
+                    session_file = os.path.join(base_dir, "dictum_tg_session.json")
                     if os.path.exists(session_file):
                         with open(session_file, "r", encoding="utf-8") as f:
                             auth_id = json.load(f).get("last_chat_id", "")
@@ -1032,7 +1046,7 @@ class DictumBridge(ctk.CTk):
                 
                 if incoming_chat_id and auth_id and incoming_chat_id != auth_id: return
                 log_prefix = "📡 Сигнал (Telegram Защищенный)"
-            elif raw.startswith("tg_run::"): return
+            elif raw.startswith("tg_run::") or raw.startswith("tg_res_screenshot::"): return
             else:
                 cmd_raw = raw.lower().strip()
                 log_prefix = "📡 Сигнал (Алиса)"

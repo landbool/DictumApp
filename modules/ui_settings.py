@@ -127,8 +127,14 @@ class UISettingsView(ctk.CTkFrame):
             except WindowsError: pass
             
     def refresh_status(self):
-        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        session_file = os.path.join(current_dir, "dictum_tg_session.json")
+        # 1. Умный корень для статуса синхронизации
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+        session_file = os.path.join(base_dir, "dictum_tg_session.json")
+        
         if os.path.exists(session_file):
             try:
                 with open(session_file, "r", encoding="utf-8") as f:
@@ -145,8 +151,13 @@ class UISettingsView(ctk.CTkFrame):
         self.btn_unlink.pack_forget()
 
     def unlink_account(self):
-        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        session_file = os.path.join(current_dir, "dictum_tg_session.json")
+        # 2. Умный корень для сброса привязки
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+        session_file = os.path.join(base_dir, "dictum_tg_session.json")
         
         chat_id = None
         if os.path.exists(session_file):
@@ -168,27 +179,20 @@ class UISettingsView(ctk.CTkFrame):
         self.entry_code.delete(0, 'end')
         self.refresh_status()
         
-    def request_auth_code(self):
-        phone = self.entry_phone.get().strip().replace("+", "").replace(" ", "")
-        if not phone:
-            self.lbl_status.configure(text="Статус: ⚠️ Укажите номер телефона", text_color="#FF9500")
-            return
-        
-        main_app = DictumEngine.main_gui_ref
-        if main_app and hasattr(main_app, 'mqtt_client') and main_app.mqtt_client:
-            self.lbl_status.configure(text="Статус: ⏳ Запрашиваем секретный код у бота...", text_color="#007AFF")
-            from main import SYSTEM_TOPIC
-            main_app.mqtt_client.publish(SYSTEM_TOPIC, f"tg_cmd_auth_code_req::{phone}")
-        else:
-            self.lbl_status.configure(text="Статус: ❌ Отсутствует подключение к брокеру!", text_color="#FF453A")
-            
     def verify_auth_code(self):
         entered = self.entry_code.get().strip()
         if not entered: return
         
+        # Строка 199 (начало условия проверки кода)
         if self.cached_code and entered == self.cached_code:
-            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            session_file = os.path.join(current_dir, "dictum_tg_session.json")
+            # 🔥 ОБРАТИ ВНИМАНИЕ: Весь этот блок сдвинут вправо внутрь условия!
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                
+            session_file = os.path.join(base_dir, "dictum_tg_session.json")
+            
             try:
                 with open(session_file, "w", encoding="utf-8") as f:
                     json.dump({"last_chat_id": str(self.cached_chat_id), "phone": self.entry_phone.get().strip().replace("+", "")}, f, indent=4)
@@ -204,6 +208,21 @@ class UISettingsView(ctk.CTkFrame):
                 print(f"Ошибка сохранения сессии: {ex}")
         else:
             self.lbl_status.configure(text="Статус: ❌ Неверный одноразовый код!", text_color="#FF453A")
+        
+    def request_auth_code(self):
+        phone = self.entry_phone.get().strip().replace("+", "").replace(" ", "")
+        if not phone:
+            self.lbl_status.configure(text="Статус: ⚠️ Укажите номер телефона", text_color="#FF9500")
+            return
+        
+        main_app = DictumEngine.main_gui_ref
+        if main_app and hasattr(main_app, 'mqtt_client') and main_app.mqtt_client:
+            self.lbl_status.configure(text="Статус: ⏳ Запрашиваем секретный код у бота...", text_color="#007AFF")
+            from main import SYSTEM_TOPIC
+            main_app.mqtt_client.publish(SYSTEM_TOPIC, f"tg_cmd_auth_code_req::{phone}")
+        else:
+            self.lbl_status.configure(text="Статус: ❌ Отсутствует подключение к брокеру!", text_color="#FF453A")
+            
 
     def load_mqtt_topic(self):
         current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

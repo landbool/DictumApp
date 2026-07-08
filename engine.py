@@ -496,7 +496,6 @@ class DictumEngine:
                                     pass
 
                 elif cmd == "tg_send_screenshot":
-                    # Динамически подгружаем актуальный chat_id из сохранённой сессии бота
                     current_chat_id = DictumEngine._load_saved_tg_chat_id()
                     
                     def _screenshot_worker(chat_id):
@@ -507,13 +506,24 @@ class DictumEngine:
                             # Снимаем панораму экранов
                             screenshot = ImageGrab.grab(all_screens=True)
                             
-                            # Если картинка в RGBA (бывает из-за прозрачности Windows), переводим в RGB для JPEG
+                            # Если картинка в RGBA, переводим в RGB для корректного сжатия
                             if screenshot.mode in ("RGBA", "P"):
                                 screenshot = screenshot.convert("RGB")
                                 
-                            # Сжимаем в буфер памяти как JPEG (качество 50%, чтобы уложиться в лимит MQTT 1МБ)
+                            # 🔥 ФИШКА 1: Пропорционально уменьшаем размер до 75% от оригинала.
+                            # Это снижает вес файла почти в 2 раза БЕЗ появления кубиков и размытия.
+                            scale_factor = 0.75 
+                            new_width = int(screenshot.width * scale_factor)
+                            new_height = int(screenshot.height * scale_factor)
+                            
+                            # Используем самый качественный алгоритм уменьшения — LANCZOS
+                            screenshot = screenshot.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                            
+                            # Сжимаем в буфер памяти
                             buffer = io.BytesIO()
-                            screenshot.save(buffer, format="JPEG", quality=50)
+                            
+                            # 🔥 ФИШКА 2 и 3: Сохраняем в современном формате WebP с высоким качеством и оптимизацией
+                            screenshot.save(buffer, format="WebP", quality=100, optimize=True)
                             
                             # Кодируем байты в строку Base64
                             base64_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
@@ -527,7 +537,6 @@ class DictumEngine:
                         except Exception as e: 
                             print(f"Ошибка подготовки скриншота для MQTT: {e}")
                             
-                    # Запускаем отправку в фоновом потоке, чтобы интерфейс программы не фризил
                     threading.Thread(target=_screenshot_worker, args=(current_chat_id,), daemon=True).start()
                 
                 elif cmd == "sound_control":
