@@ -27,7 +27,7 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.4"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
 # 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
 YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
@@ -493,13 +493,31 @@ class DictumBridge(ctk.CTk):
         
         # 🔥 Инициализируем живую переменную для динамической смены подписок Алисы
         self.current_alice_topic = ALICE_TOPIC
+
+        # 🔥 Перехватываем стандартное закрытие Windows (нажатие на крестик)
+        self.protocol("WM_DELETE_WINDOW", self.on_close_request)
         
         self.setup_ui()
         self.views["cmds"].pack(fill="both", expand=True)
         self.refresh_list()
         
-        self.splash = DictumSplashScreen(self, os.path.join(current_dir, "img/startup.mp4"), self.show_main_app_smoothly, speed_factor=1.75, vector_duration=1.5)
+        # 🔥 ИСПРАВЛЕНО: Читаем настройку заставки перед её запуском
+        show_splash = True
+        if os.path.exists(MQTT_FILE):
+            try:
+                with open(MQTT_FILE, "r", encoding="utf-8") as f:
+                    show_splash = json.load(f).get("show_splash", True)
+            except: pass
+
         threading.Thread(target=self.start_mqtt, daemon=True).start()
+        
+        # Если заставка включена — запускаем её, иначе сразу мягко открываем главное окно
+        if show_splash:
+            self.splash = DictumSplashScreen(self, os.path.join(current_dir, "img/startup.mp4"), self.show_main_app_smoothly, speed_factor=1.75, vector_duration=1.5)
+        else:
+            # 🔥 ИСПРАВЛЕНО: Даем Windows 100 мс на запуск цикла событий ОС,
+            # после чего окно гарантированно развернется на экране, а не уйдет в трей!
+            self.after(100, self.show_main_app_smoothly)
 
     def show_main_app_smoothly(self):
         self.deiconify()
@@ -950,6 +968,120 @@ class DictumBridge(ctk.CTk):
         self.update_idletasks()
 
     def close_editor(self): self.current_editing_key = None; self.edit_pane.pack_forget(); self.list_pane.pack(fill="both", expand=True); self.refresh_list()
+
+    def on_close_request(self):
+        """ Обработчик нажатия на крестик программы """
+        close_behavior = "ask"
+        
+        # Читаем существующий конфиг, чтобы узнать, запомнил ли пользователь выбор ранее
+        if os.path.exists(MQTT_FILE):
+            try:
+                with open(MQTT_FILE, "r", encoding="utf-8") as f:
+                    close_behavior = json.load(f).get("close_behavior", "ask")
+            except: pass
+
+        # Если выбор уже был сделан — выполняем его без лишних вопросов
+        if close_behavior == "exit":
+            self.quit()
+            sys.exit()
+        elif close_behavior == "tray":
+            self.withdraw()  # Полностью скрывает окно с экрана и панели задач, оставляя поток MQTT живым
+            return
+
+        # Если стоит режим "ask", создаем красивое стеклянное диалоговое окно
+        close_win = ctk.CTkToplevel(self)
+        close_win.title("Выход из Dictum")
+        close_win.geometry("380x190")
+        close_win.resizable(False, False)
+        close_win.configure(fg_color=D_SIDE)
+        close_win.attributes("-topmost", True)
+        
+        # Центрируем окошко ровно посередине главного окна программы
+        close_win.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 190
+        y = self.winfo_y() + (self.winfo_height() // 2) - 95
+        close_win.geometry(f"+{x}+{y}")
+        
+        # Убираем стандартные иконки сворачивания Windows для чистоты интерфейса
+        if os.name == 'nt':
+            try:
+                hwnd = ctk.enum_windows()[0]
+                import ctypes
+                dark = ctypes.c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(close_win.winfo_id(), 20, ctypes.byref(dark), ctypes.sizeof(dark))
+            except: pass
+
+        lbl_msg = ctk.CTkLabel(
+            close_win, 
+            text="Закрыть пульт полностью или\nсвернуть его в фоновый режим работы?", 
+            font=("Segoe UI Semibold", 13), 
+            text_color="#E5E7EB"
+        )
+        lbl_msg.pack(pady=(25, 12))
+        
+        # Чекбокс сохранения решения
+        chk_remember = ctk.CTkCheckBox(
+            close_win, 
+            text="Запомнить мой выбор", 
+            font=("Segoe UI", 11), 
+            text_color="gray50", 
+            checkbox_width=18, 
+            checkbox_height=18, 
+            border_width=1, 
+            fg_color=ACCENT
+        )
+        chk_remember.pack(pady=(0, 18))
+        
+        btn_frame = ctk.CTkFrame(close_win, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=25)
+        
+        def handle_choice(action):
+            # Если пользователь поставил галочку — сохраняем поведение в json
+            if chk_remember.get() == 1:
+                config_data = {}
+                if os.path.exists(MQTT_FILE):
+                    try:
+                        with open(MQTT_FILE, "r", encoding="utf-8") as f: config_data = json.load(f)
+                    except: pass
+                config_data["close_behavior"] = action
+                try:
+                    with open(MQTT_FILE, "w", encoding="utf-8") as f: json.dump(config_data, f, indent=4)
+                except: pass
+            
+            close_win.destroy()
+            if action == "exit":
+                self.quit()
+                sys.exit()
+            else:
+                self.withdraw()  # Сворачиваем (скрываем интерфейс)
+
+        # Кнопка сворачивания в фон
+        btn_tray = ctk.CTkButton(
+            btn_frame, 
+            text="Свернуть в фон", 
+            width=160, 
+            height=36, 
+            fg_color="#1F2438", 
+            hover_color=ACCENT, 
+            font=("Segoe UI Bold", 12), 
+            corner_radius=8, 
+            command=lambda: handle_choice("tray")
+        )
+        btn_tray.pack(side="left", padx=(0, 10))
+        
+        # Кнопка полного уничтожения процесса
+        btn_exit = ctk.CTkButton(
+            btn_frame, 
+            text="Закрыть совсем", 
+            width=160, 
+            height=36, 
+            fg_color="#FF453A", 
+            hover_color="#FF3B30", 
+            font=("Segoe UI Bold", 12), 
+            corner_radius=8, 
+            command=lambda: handle_choice("exit")
+        )
+        btn_exit.pack(side="right")
     
     def show_view(self, name):
         for v in self.views.values(): v.pack_forget()

@@ -23,6 +23,8 @@ class UISettingsView(ctk.CTkFrame):
         self.setup_ui()
         self.refresh_status()
         self.load_mqtt_topic()
+        self.load_close_behavior() # 🔥 Добавили чтение настройки закрытия при старте
+        self.load_splash_behavior() # 🔥 Добавили чтение тумблера заставки при старте
 
     def setup_ui(self):
         frame = ctk.CTkFrame(self, fg_color=self.side_color, border_width=1, border_color=self.border_color, corner_radius=14)
@@ -53,6 +55,54 @@ class UISettingsView(ctk.CTkFrame):
         if self.check_startup_status(): self.switch_startup.select()
         else: self.switch_startup.deselect()
         
+        # --- 🔥 НОВЫЙ КОМПОНЕНТ 1.2: ПОВЕДЕНИЕ ПРИ НАЖАТИИ НА КРЕСТИК ---
+        row_close = ctk.CTkFrame(frame, fg_color="transparent")
+        row_close.pack(fill="x", padx=25, pady=(5, 20))
+        
+        text_close_container = ctk.CTkFrame(row_close, fg_color="transparent")
+        text_close_container.pack(side="left", fill="y")
+        
+        lbl_close = ctk.CTkLabel(text_close_container, text="При нажатии на крестик", font=("Segoe UI Semibold", 14), text_color="#E5E7EB")
+        lbl_close.pack(anchor="w")
+        
+        lbl_close_hint = ctk.CTkLabel(text_close_container, text="Выберите действие по умолчанию при закрытии главного окна программы", font=("Segoe UI", 11), text_color="gray45")
+        lbl_close_hint.pack(anchor="w", pady=(2, 0))
+        
+        self.drop_close = ctk.CTkOptionMenu(
+            row_close, 
+            values=["Спрашивать", "Свернуть в фон", "Закрыть совсем"], 
+            width=160, 
+            height=32, 
+            fg_color="#090A0F", 
+            button_color="#171A26", 
+            command=self.save_close_behavior
+        )
+        self.drop_close.pack(side="right", anchor="center")
+        
+        # --- 🔥 ПОВЕДЕНИЕ ЗАСТАВКИ ПРИ ЗАПУСКЕ ---
+        row_splash = ctk.CTkFrame(frame, fg_color="transparent")
+        row_splash.pack(fill="x", padx=25, pady=(5, 20))
+        
+        text_splash_container = ctk.CTkFrame(row_splash, fg_color="transparent")
+        text_splash_container.pack(side="left", fill="y")
+        
+        lbl_splash = ctk.CTkLabel(text_splash_container, text="Показывать заставку при запуске", font=("Segoe UI Semibold", 14), text_color="#E5E7EB")
+        lbl_splash.pack(anchor="w")
+        
+        lbl_splash_hint = ctk.CTkLabel(text_splash_container, text="Включение или отключение стартовой видео-анимации при открытии приложения", font=("Segoe UI", 11), text_color="gray45")
+        lbl_splash_hint.pack(anchor="w", pady=(2, 0))
+        
+        self.switch_splash = ctk.CTkSwitch(
+            row_splash, 
+            text="", 
+            width=45, 
+            fg_color="#1F2438", 
+            progress_color=self.accent_color, 
+            command=self.save_splash_behavior
+        )
+        self.switch_splash.pack(side="right", anchor="center")
+        
+        # Наш разделитель, который шел далее в коде
         divider2 = ctk.CTkFrame(frame, height=1, fg_color=self.border_color)
         divider2.pack(fill="x", padx=25, pady=15)
         
@@ -201,6 +251,11 @@ class UISettingsView(ctk.CTkFrame):
                 if main_app and hasattr(main_app, 'mqtt_client') and main_app.mqtt_client:
                     from main import SYSTEM_TOPIC
                     main_app.mqtt_client.publish(SYSTEM_TOPIC, f"tg_cmd_auth_success::{self.cached_chat_id}")
+                    
+                    # 🔥 ИСПРАВЛЕНО: Мгновенно выталкиваем макросы ПК в базу сервера, 
+                    # чтобы у нового пользователя сразу выкатился пульт управления!
+                    if hasattr(main_app, 'sync_commands_to_bot'):
+                        main_app.sync_commands_to_bot()
                 
                 self.refresh_status()
                 self.entry_code.delete(0, 'end')
@@ -257,3 +312,80 @@ class UISettingsView(ctk.CTkFrame):
             self.after(2000, lambda: self.btn_save_topic.configure(fg_color="#248A3D", text="💾 Сохранить топик"))
         except Exception as e:
             print(f"Ошибка сохранения MQTT конфига: {e}")
+
+    def load_close_behavior(self):
+        """ Читает настройку close_behavior из общего конфига и выставляет её в UI """
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        mqtt_file = os.path.join(current_dir, "dictum_mqtt_config.json")
+        
+        behavior_map = {"ask": "Спрашивать", "tray": "Свернуть в фон", "exit": "Закрыть совсем"}
+        
+        if os.path.exists(mqtt_file):
+            try:
+                with open(mqtt_file, "r", encoding="utf-8") as f:
+                    action = json.load(f).get("close_behavior", "ask")
+                    self.drop_close.set(behavior_map.get(action, "Спрашивать"))
+                    return
+            except: pass
+        self.drop_close.set("Спрашивать")
+
+    def save_close_behavior(self, choice):
+        """ Срабатывает при смене значения в выпадающем списке и перезаписывает JSON """
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        mqtt_file = os.path.join(current_dir, "dictum_mqtt_config.json")
+        
+        behavior_map_rev = {"Спрашивать": "ask", "Свернуть в фон": "tray", "Закрыть совсем": "exit"}
+        action = behavior_map_rev.get(choice, "ask")
+        
+        config_data = {}
+        if os.path.exists(mqtt_file):
+            try:
+                with open(mqtt_file, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+            except: pass
+            
+        config_data["close_behavior"] = action
+        try:
+            with open(mqtt_file, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, indent=4)
+        except Exception as e:
+            print(f"Ошибка сохранения настройки закрытия: {e}")
+
+    def load_splash_behavior(self):
+        """ Читает настройку show_splash из общего конфига и выставляет тумблер """
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        mqtt_file = os.path.join(current_dir, "dictum_mqtt_config.json")
+        
+        show_splash = True
+        if os.path.exists(mqtt_file):
+            try:
+                with open(mqtt_file, "r", encoding="utf-8") as f:
+                    show_splash = json.load(f).get("show_splash", True)
+            except: pass
+            
+        if show_splash:
+            self.switch_splash.select()
+        else:
+            self.switch_splash.deselect()
+
+    def save_splash_behavior(self):
+        """ Срабатывает при клике на тумблер и сохраняет состояние True/False в JSON """
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        mqtt_file = os.path.join(current_dir, "dictum_mqtt_config.json")
+        
+        # Получаем булево значение состояния свитча
+        state = True if self.switch_splash.get() == 1 else False
+        
+        config_data = {}
+        if os.path.exists(mqtt_file):
+            try:
+                with open(mqtt_file, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+            except: pass
+            
+        config_data["show_splash"] = state
+        try:
+            with open(mqtt_file, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, indent=4)
+        except Exception as e:
+            print(f"Ошибка сохранения настройки заставки: {e}")
