@@ -108,8 +108,14 @@ class DictumEngine:
     @staticmethod
     def _load_saved_tg_chat_id():
         try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            log_path = os.path.join(current_dir, "dictum_tg_session.json")
+            import sys
+            # Проверяем, запущена ли программа как скомпилированный .exe
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable) # Папка, где лежит Dictum.exe
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__)) # Среда разработки
+                
+            log_path = os.path.join(base_dir, "dictum_tg_session.json")
             if os.path.exists(log_path):
                 with open(log_path, "r", encoding="utf-8") as f:
                     return json.load(f).get("last_chat_id", DictumEngine.last_tg_chat_id)
@@ -490,30 +496,39 @@ class DictumEngine:
                                     pass
 
                 elif cmd == "tg_send_screenshot":
-                    # 🔥 ФИКС 1: Токен берётся из .env, если в val нет символа ':' (признак настоящего токена)
-                    default_token = os.getenv("TG_BOT_TOKEN")
-                    bot_token = val.strip() if val and ":" in val else default_token
-                    
-                    # 🔥 ФИКС 2: Динамически подгружаем актуальный chat_id из сохранённой сессии бота
+                    # Динамически подгружаем актуальный chat_id из сохранённой сессии бота
                     current_chat_id = DictumEngine._load_saved_tg_chat_id()
                     
-                    def _screenshot_worker(token, chat_id):
+                    def _screenshot_worker(chat_id):
                         try:
-                            current_dir = os.path.dirname(os.path.abspath(__file__))
-                            temp_scr_path = os.path.join(current_dir, "live_desktop_screenshot.png")
-                            screenshot = ImageGrab.grab(all_screens=True)
-                            screenshot.save(temp_scr_path, "PNG")
-                            if os.path.exists(temp_scr_path):
-                                url = f"https://api.telegram.org/bot{token}/sendPhoto"
-                                # Используем переданный в аргументы chat_id
-                                requests.post(url, data={"chat_id": chat_id, "caption": "Dictum: 📸 Снимок экрана"}, files={"photo": open(temp_scr_path, "rb")}, timeout=15)
-                                try: os.remove(temp_scr_path)
-                                except: pass
-                        except Exception as e: 
-                            print(f"Ошибка скриншота: {e}")
+                            import io
+                            import base64
                             
-                    # Запускаем поток, передавая проверенный токен и реальный chat_id
-                    threading.Thread(target=_screenshot_worker, args=(bot_token, current_chat_id), daemon=True).start()
+                            # Снимаем панораму экранов
+                            screenshot = ImageGrab.grab(all_screens=True)
+                            
+                            # Если картинка в RGBA (бывает из-за прозрачности Windows), переводим в RGB для JPEG
+                            if screenshot.mode in ("RGBA", "P"):
+                                screenshot = screenshot.convert("RGB")
+                                
+                            # Сжимаем в буфер памяти как JPEG (качество 50%, чтобы уложиться в лимит MQTT 1МБ)
+                            buffer = io.BytesIO()
+                            screenshot.save(buffer, format="JPEG", quality=50)
+                            
+                            # Кодируем байты в строку Base64
+                            base64_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                            
+                            # Отправляем текстовый пакет через MQTT на сервер бота
+                            if DictumEngine.main_gui_ref and DictumEngine.main_gui_ref.mqtt_client:
+                                from main import SYSTEM_TOPIC
+                                payload = f"tg_res_screenshot::{chat_id}::{base64_str}"
+                                DictumEngine.main_gui_ref.mqtt_client.publish(SYSTEM_TOPIC, payload)
+                                
+                        except Exception as e: 
+                            print(f"Ошибка подготовки скриншота для MQTT: {e}")
+                            
+                    # Запускаем отправку в фоновом потоке, чтобы интерфейс программы не фризил
+                    threading.Thread(target=_screenshot_worker, args=(current_chat_id,), daemon=True).start()
                 
                 elif cmd == "sound_control":
                     parts = [x.strip() for x in val.split('|')]

@@ -27,7 +27,7 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.1"
+CURRENT_VERSION = "1.0.2"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
 # 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
 YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
