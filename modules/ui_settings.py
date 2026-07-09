@@ -107,17 +107,37 @@ class UISettingsView(ctk.CTkFrame):
         divider2.pack(fill="x", padx=25, pady=15)
         
         # --- КОМПОНЕНТ 2: АВТОРИЗАЦИЯ ТЕЛЕГРАМ ---
-        lbl_tg_section = ctk.CTkLabel(frame, text="СВЯЗЬ С TELEGRAM", font=("Segoe UI Variable Display", 14, "bold"), text_color=self.accent_color)
-        lbl_tg_section.pack(anchor="w", padx=25, pady=(10, 15))
+        # 🔥 ИСПРАВЛЕНО: Горизонтальный контейнер заголовка для ровной упаковки кнопки хелпа
+        row_tg_header = ctk.CTkFrame(frame, fg_color="transparent")
+        row_tg_header.pack(fill="x", padx=25, pady=(10, 15))
         
+        lbl_tg_section = ctk.CTkLabel(row_tg_header, text="СВЯЗЬ С TELEGRAM", font=("Segoe UI Variable Display", 14, "bold"), text_color=self.accent_color)
+        lbl_tg_section.pack(side="left")
+        
+        btn_tg_help = ctk.CTkButton(
+            row_tg_header, 
+            text="Инструкция", 
+            font=("Segoe UI Semibold", 11), 
+            fg_color="#1A1D29", 
+            hover_color=self.accent_color, 
+            text_color="#E5E7EB", 
+            width=110, 
+            height=26, 
+            corner_radius=6, 
+            command=lambda: webbrowser.open("https://telegra.ph/Dictum-07-09#Часть-1.-Подключение-Telegram-бота-(Удалённый-пульт)")
+        )
+        # 🔥 ИСПРАВЛЕНО: Упаковываем слева, сделав аккуратный отступ в 12 пикселей от надписи
+        btn_tg_help.pack(side="left", padx=(12, 0))
+        
+        # 🔥 ВОССТАНОВЛЕНО: Текстовое поле статуса проверки данных
         self.lbl_status = ctk.CTkLabel(frame, text="Статус: Проверка данных...", font=("Segoe UI Semibold", 13), text_color="gray60")
         self.lbl_status.pack(anchor="w", padx=25, pady=(0, 15))
         
-        self.btn_unlink = ctk.CTkButton(frame, text="🛑 Разорвать текущую связь (Сброс)", font=("Segoe UI Semibold", 11), fg_color="#2A1717", hover_color="#FF453A", text_color="#FCE8E8", height=30, corner_radius=8, command=self.unlink_account)
-        
-        btn_open_bot = ctk.CTkButton(frame, text="🔗 Шаг 1. Перейти к MyDictumBot", font=("Segoe UI Semibold", 12), fg_color="#1F2438", hover_color=self.accent_color, height=35, corner_radius=8, command=lambda: webbrowser.open("https://t.me/MyDictumBot"))
+        # 🔥 ВОССТАНОВЛЕНО: Кнопка перехода к Telegram-боту (Шаг 1)
+        btn_open_bot = ctk.CTkButton(frame, text="🔗 Шаг 1. Перейти к MyDictumBot", font=("Segoe UI Semibold", 12), fg_color="#1A1D29", hover_color=self.accent_color, height=35, corner_radius=8, command=lambda: webbrowser.open("https://t.me/MyDictumBot"))
         btn_open_bot.pack(anchor="w", padx=25, pady=(0, 15))
         
+        # Контейнер Шага 2 (Ввод номера телефона)
         row_phone = ctk.CTkFrame(frame, fg_color="transparent")
         row_phone.pack(fill="x", padx=25, pady=(0, 15))
         
@@ -127,6 +147,7 @@ class UISettingsView(ctk.CTkFrame):
         self.btn_get_code = ctk.CTkButton(row_phone, text="📩 Шаг 2. Запросить код", font=("Segoe UI Bold", 12), fg_color="#1A1D29", hover_color=self.accent_color, height=35, width=160, corner_radius=8, command=self.request_auth_code)
         self.btn_get_code.pack(side="right")
         
+        # Контейнер Шага 3 (Ввод проверочного кода) — теперь он объявлен РАНЬШЕ кнопки!
         row_code = ctk.CTkFrame(frame, fg_color="transparent")
         row_code.pack(fill="x", padx=25, pady=(0, 15))
         
@@ -136,12 +157,37 @@ class UISettingsView(ctk.CTkFrame):
         self.btn_verify = ctk.CTkButton(row_code, text="✅ Шаг 3. Верифицировать", font=("Segoe UI Bold", 12), fg_color="#248A3D", hover_color="#1E7A31", height=35, width=160, corner_radius=8, command=self.verify_auth_code)
         self.btn_verify.pack(side="right")
 
+        # 🔥 ИСПРАВЛЕНО: Статичный контейнер для кнопки сброса (Строго под Шагом 3, внутри блока ТГ)
+        self.tg_unlink_container = ctk.CTkFrame(frame, fg_color="transparent")
+        self.tg_unlink_container.pack(fill="x", padx=25, pady=(5, 10))
+
+        self.btn_unlink = ctk.CTkButton(self.tg_unlink_container, text="🛑 Разорвать текущую связь (Сброс)", font=("Segoe UI Semibold", 11), fg_color="#2A1717", hover_color="#FF453A", text_color="#FCE8E8", height=30, corner_radius=8, command=self.unlink_account)
+
         # --- КОМПОНЕНТ 3: НАСТРОЙКА MQTT (АЛИСА / КУЗЯ) ---
         divider3 = ctk.CTkFrame(frame, height=1, fg_color=self.border_color)
         divider3.pack(fill="x", padx=25, pady=15)
         
-        lbl_mqtt_section = ctk.CTkLabel(frame, text="ИНТЕГРАЦИЯ С АЛИСОЙ (MQTT топик)", font=("Segoe UI Variable Display", 14, "bold"), text_color=self.accent_color)
-        lbl_mqtt_section.pack(anchor="w", padx=25, pady=(10, 15))
+        # 🔥 ИСПРАВЛЕНО: Горизонтальный контейнер заголовка для ровной упаковки кнопки хелпа
+        row_mqtt_header = ctk.CTkFrame(frame, fg_color="transparent")
+        row_mqtt_header.pack(fill="x", padx=25, pady=(10, 15))
+        
+        lbl_mqtt_section = ctk.CTkLabel(row_mqtt_header, text="ИНТЕГРАЦИЯ С АЛИСОЙ (MQTT топик)", font=("Segoe UI Variable Display", 14, "bold"), text_color=self.accent_color)
+        lbl_mqtt_section.pack(side="left")
+        
+        btn_mqtt_help = ctk.CTkButton(
+            row_mqtt_header, 
+            text="Инструкция", 
+            font=("Segoe UI Semibold", 11), 
+            fg_color="#1A1D29", 
+            hover_color=self.accent_color, 
+            text_color="#E5E7EB", 
+            width=110, 
+            height=26, 
+            corner_radius=6, 
+            command=lambda: webbrowser.open("https://telegra.ph/Dictum-07-09#Часть-2.-Подключение-Алисы-(Голосовое-управление)")
+        )
+        # 🔥 ИСПРАВЛЕНО: Теперь и эта кнопка прижата к левой стороне!
+        btn_mqtt_help.pack(side="left", padx=(12, 0))
         
         row_mqtt = ctk.CTkFrame(frame, fg_color="transparent")
         row_mqtt.pack(fill="x", padx=25, pady=(0, 15))
@@ -191,7 +237,8 @@ class UISettingsView(ctk.CTkFrame):
                     data = json.load(f)
                     phone = data.get("phone", "Зарегистрирован")
                     self.lbl_status.configure(text=f"Статус: ✅ Синхронизировано с Telegram: +{phone}", text_color="#34C759")
-                    self.btn_unlink.pack(anchor="w", padx=25, pady=(0, 15))
+                    # 🔥 ИСПРАВЛЕНО: Кнопка плавно и ровно появляется внутри своего родного блока ТГ
+                    self.btn_unlink.pack(anchor="w", padx=0, pady=0)
                     if phone != "Зарегистрирован":
                         self.entry_phone.delete(0, 'end')
                         self.entry_phone.insert(0, phone)

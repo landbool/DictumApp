@@ -29,7 +29,7 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.5"
+CURRENT_VERSION = "1.0.6"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
 # 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
 YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
@@ -524,25 +524,45 @@ class DictumBridge(ctk.CTk):
 
     def setup_tray(self):
         """ Создание и запуск иконки в трее Windows """
-        # Подтягиваем файл логотипа из корня проекта
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "convertico-logo.ico")
+        # 🔥 ИСПРАВЛЕНО: Умное определение пути к иконке для скомпилированного .exe
+        if getattr(sys, 'frozen', False):
+            # Если программа скомпилирована, ищем иконку в корне папки рядом с Dictum.exe
+            base_dir = os.path.dirname(sys.executable)
+            icon_path = os.path.join(base_dir, "convertico-logo.ico")
+            
+            # Резервная проверка: если PyInstaller упаковал её внутрь _internal
+            if not os.path.exists(icon_path) and hasattr(sys, '_MEIPASS'):
+                icon_path = os.path.join(sys._MEIPASS, "convertico-logo.ico")
+        else:
+            # Если запускаем через чистый python
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "convertico-logo.ico")
+
         try:
             image = Image.open(icon_path)
         except:
-            # Резервный синий квадрат, если файл иконки вдруг удалили
+            # Тот самый резервный синий квадрат, если файл иконки вообще нигде не нашелся
             image = Image.new('RGB', (64, 64), color='#007AFF')
 
-        # Описываем контекстное меню правого клика по иконке трея
         menu = pystray.Menu(
             pystray.MenuItem('Развернуть пульт', self.show_from_tray, default=True),
             pystray.MenuItem('Выход', self.exit_from_tray)
         )
 
         self.tray_icon = pystray.Icon("Dictum", image, "Dictum", menu)
-        
-        # ⚠️ КРИТИЧЕСКИ ВАЖНО: запускаем pystray в фоновом потоке.
-        # Иначе он заблокирует главное окно и приложение намертво зависнет!
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def show_from_tray(self):
+        """ Безопасный вывод скрытого окна на экран компьютера """
+        self.after(0, self.deiconify)
+        self.after(0, self.lift)
+        self.after(0, self.focus_force)
+
+    def exit_from_tray(self):
+        """ Чистое закрытие приложения со всеми компонентами """
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            self.tray_icon.stop()
+        self.quit()
+        sys.exit()
 
     def show_from_tray(self):
         """ Безопасный вывод скрытого окна на экран компьютера через поток Tkinter """
