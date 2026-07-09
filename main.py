@@ -29,7 +29,7 @@ MQTT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictum_mqt
 BROKER = "broker.emqx.io"
 
 # --- КОНФИГУРАЦИЯ АВТООБНОВЛЕНИЙ ---
-CURRENT_VERSION = "1.0.6"
+CURRENT_VERSION = "1.0.7"
 GITHUB_API_URL = "https://api.github.com/repos/landbool/DictumApp/releases/latest"
 # 🔥 ДОБАВЛЕНО: Твоя постоянная публичная ссылка на файл Dictum_Setup.exe на Яндекс Диске
 YANDEX_PUBLIC_URL = "https://disk.yandex.ru/d/https://disk.yandex.ru/d/q6Wg9O2XqGWYOw"
@@ -522,6 +522,15 @@ class DictumBridge(ctk.CTk):
             # после чего окно гарантированно развернется на экране, а не уйдет в трей!
             self.after(100, self.show_main_app_smoothly)
 
+        # Если заставка включена — запускаем её, иначе сразу мягко открываем главное окно
+        if show_splash:
+            self.splash = DictumSplashScreen(self, os.path.join(current_dir, "img/startup.mp4"), self.show_main_app_smoothly, speed_factor=1.75, vector_duration=1.5)
+        else:
+            self.after(100, self.show_main_app_smoothly)
+
+        # 🔥 ДОБАВЛЕНО: Включаем защиту от повторного запуска и открываем порт приёма сигналов
+        self.start_single_instance_server()
+
     def setup_tray(self):
         """ Создание и запуск иконки в трее Windows """
         # 🔥 ИСПРАВЛЕНО: Умное определение пути к иконке для скомпилированного .exe
@@ -550,6 +559,28 @@ class DictumBridge(ctk.CTk):
 
         self.tray_icon = pystray.Icon("Dictum", image, "Dictum", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
+    
+    def start_single_instance_server(self):
+        """ Запускает локальный сокет-сервер для обнаружения и пробуждения из трея """
+        def server_worker():
+            import socket
+            try:
+                server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # Бронируем уникальный локальный порт для Dictum
+                server.bind(('127.0.0.1', 49321))
+                server.listen(1)
+                while True:
+                    conn, addr = server.accept()
+                    data = conn.recv(1024)
+                    if b'wake_up' in data:
+                        # Если прилетел пинг от новой копии — безопасно будим окно из потока Tkinter
+                        self.show_from_tray()
+                    conn.close()
+            except:
+                # Если что-то пошло не так, просто гасим поток, чтобы не крашить приложение
+                pass
+                
+        threading.Thread(target=server_worker, daemon=True).start()
 
     def show_from_tray(self):
         """ Безопасный вывод скрытого окна на экран компьютера """
@@ -1256,6 +1287,23 @@ class DictumBridge(ctk.CTk):
         except Exception as mqtt_err: self.after(0, lambda: self.v_logs.insert("end", f"❌ СБОЙ MQTT: {mqtt_err}\n"))
 
 if __name__ == "__main__":
+    import socket
+    
+    # 🔥 ИСПРАВЛЕНО: Ультимативный Single Instance чек перед созданием оконной подсистемы
+    try:
+        # Проверяем, не запущена ли уже копия программы
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect(('127.0.0.1', 49321))
+        # Если подключение удалось — шлём сигнал основной копии на пробуждение
+        client_socket.sendall(b'wake_up')
+        client_socket.close()
+        # Тихо закрываем текущий процесс. Пользователь увидит, как старое окно всплывёт на экран!
+        sys.exit(0)
+    except socket.error:
+        # Если порт выдал ошибку подключения — значит мы первые. Спокойно идём дальше!
+        pass
+
+    # Чистим старые зависшие скрипты (если они были)
     try:
         current_pid = os.getpid()
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -1264,14 +1312,7 @@ if __name__ == "__main__":
                 if "main.py" in cmd_line and "python" in proc.info['name'].lower():
                     try: psutil.Process(proc.info['pid']).terminate()
                     except: pass
-                if "bridge_tg.py" in cmd_line:
-                    try: psutil.Process(proc.info['pid']).terminate()
-                    except: pass
-        time.sleep(0.2)
     except: pass
 
-    #tg_script = os.path.join(current_dir, "bridge_tg.py")
-    #if os.path.exists(tg_script):
-    #    subprocess.Popen([sys.executable, tg_script], creationflags=subprocess.CREATE_NO_WINDOW)
-
+    # Запускаем главное окно первого и единственного экземпляра
     DictumBridge().mainloop()
